@@ -1,0 +1,62 @@
+[project]
+name = "asyncdbview"
+version = "0.0.1"
+authors = [
+  { name="Alexander Sosedkin", email="monk@unboiled.info" },
+]
+description = "Limited async-first ORM with a local cache"
+urls.homepage = "https://github.com/t184256/asyncdbview"
+readme = "README.md"
+license = {file = "LICENSE"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
+]
+requires-python = ">=3.11"
+dependencies = [
+    "sqlalchemy", "aiosqlite",
+]
+optional-dependencies.test = [
+    "pytest",
+    "coverage", "pytest-cov", "mypy", "pytest-mypy",
+    "pylama", "pyflakes", "pycodestyle", "pydocstyle", "mccabe",
+    "pylint", "eradicate",
+    "pytest-asyncio",
+]
+
+[tool.pytest.ini_options]
+# TODO: enable mypy
+addopts = "--pylama --cov --cov-report term-missing --doctest-modules"
+
+[tool.pylama]
+# TODO: enable mccabe
+linters = "pylint,pyflakes,pycodestyle,pydocstyle,eradicate"
+
+[tool.pylama.linter.pydocstyle]
+ignore = "D212,D203,D105"
+
+[tool.coverage]
+run.source = ["asyncdbview"]
+run.branch = true
+report.exclude_lines = [ "if __name__ == .__main__.:" ]
+report.fail_under = 100
+
+[tool.pylint.'MESSAGES CONTROL']
+# TODO: get rid of all of those below
+disable = [
+    "W0511",
+    "R0903",
+    "C0103",
+    "W0212",
+    "R0913",
+    "R0913",
+    "R0902",
+    "E1101",
+    "W0201",
+    "D102",
+    "C0116",
+    "W0612",
+    "R0915",
+    "D102",
+    "E0401",
+]
