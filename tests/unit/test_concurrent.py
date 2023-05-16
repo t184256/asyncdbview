@@ -127,8 +127,22 @@ async def test_smoke(example_origin):
 
 
 @pytest.mark.asyncio
-async def test_concurrent(example_origin):
-    """Test concurrent access."""
+async def test_concurrent_same(example_origin):
+    """Test concurrent access to same parent."""
+    origin = await example_origin
+    async with AB_ADBV(origin) as adbv:
+        async def count_bs():
+            a = await adbv.A(1)
+            return len(await a.bs)
+
+        bs = await asyncio.gather(*[count_bs() for i in range(10)])
+        assert sum(bs) == 10 * 100
+    await origin.dispose()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_different(example_origin):
+    """Test concurrent access to different parents."""
     origin = await example_origin
     async with AB_ADBV(origin) as adbv:
         async def count_bs(a_id):
@@ -137,3 +151,4 @@ async def test_concurrent(example_origin):
 
         bs = await asyncio.gather(*[count_bs(i) for i in range(10)])
         assert sum(bs) == 10 * 100
+    await origin.dispose()
