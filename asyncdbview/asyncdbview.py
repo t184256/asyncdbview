@@ -136,9 +136,10 @@ class ADBVObject:
                             await cache_session.merge(e)
                     else:
                         await cache_session.merge(r)
-                if not ever_loaded_exists:  # race condition
-                    await _ever_loaded_mark(cache_session, cls, identity, name)
-                await cache_session.commit()
+                    if not ever_loaded_exists:  # race condition
+                        await _ever_loaded_mark(cache_session, cls,
+                                                identity, name)
+                    await cache_session.commit()
             async with adbv._lock:
                 await cache_session.refresh(cache_object,
                                             attribute_names=[name])
