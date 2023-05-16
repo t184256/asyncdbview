@@ -136,7 +136,7 @@ async def test_concurrent_same(example_origin):
             return len(await a.bs)
 
         bs = await asyncio.gather(*[count_bs() for i in range(10)])
-        assert sum(bs) == 10 * 100
+        assert bs == [100] * 10
     await origin.dispose()
 
 
@@ -150,5 +150,5 @@ async def test_concurrent_different(example_origin):
             return len(await a.bs)
 
         bs = await asyncio.gather(*[count_bs(i) for i in range(10)])
-        assert sum(bs) == 10 * 100
+        assert bs == [100] * 10
     await origin.dispose()

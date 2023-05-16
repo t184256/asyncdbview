@@ -48,21 +48,37 @@ _ever_loaded = sqlalchemy.Table(
 
 
 async def _ever_loaded_exists(cache_session, cls, identity, attrname):
-    # TODO: optimize with raw SQL
-    stmt = sqlalchemy.select(_ever_loaded)\
-                     .where(_ever_loaded.c.cls == cls.__name__,
-                            _ever_loaded.c.identity == str(identity),
-                            _ever_loaded.c.field == attrname)
-    return bool((await cache_session.execute(stmt)).all())
+    # Can give false negatives under race conditions, that's acceptable
+    stmt = sqlalchemy.text("""
+        SELECT 1 FROM '_ever_loaded' WHERE
+            cls = :cls AND
+            identity = :identity AND
+            field = :field
+        LIMIT 1
+    """)
+    values = {
+        'cls': cls.__name__,
+        'identity': str(identity),
+        'field': attrname,
+    }
+    ex = cache_session.execute(stmt, params=values)
+    return bool((await ex).all())
+    # TODO: try session.execute(select(1).where(...))
 
 
 async def _ever_loaded_mark(cache_session, cls, identity, attrname):
-    # TODO: optimize with raw SQL
-    stmt = sqlalchemy.insert(_ever_loaded)\
-                     .values(cls=cls.__name__,
-                             identity=str(identity),
-                             field=attrname)
-    await cache_session.execute(stmt)
+    stmt = sqlalchemy.text("""
+        INSERT INTO _ever_loaded(cls,identity,field)
+        VALUES(:cls,:identity,:field)
+        ON CONFLICT DO NOTHING
+    """)
+    values = {
+        'cls': cls.__name__,
+        'identity': str(identity),
+        'field': attrname,
+    }
+    await cache_session.execute(stmt, params=values)
+    # TODO: try sqlalchemy way of upserting?
 
 
 class ADBVObject:
@@ -129,17 +145,18 @@ class ADBVObject:
                 r = getattr(o, name)
                 # merge the result(s) into the cache db
                 async with adbv._lock:
-                    if r is None:
-                        pass
-                    elif isinstance(r, list):
-                        for e in r:
-                            await cache_session.merge(e)
-                    else:
-                        await cache_session.merge(r)
-                    if not ever_loaded_exists:  # race condition
-                        await _ever_loaded_mark(cache_session, cls,
-                                                identity, name)
-                    await cache_session.commit()
+                    async with adbv._cache_sm() as cache_session2:
+                        if r is None:
+                            pass
+                        elif isinstance(r, list):
+                            for e in r:
+                                await cache_session2.merge(e)
+                        else:
+                            await cache_session2.merge(r)
+                        if not ever_loaded_exists:
+                            await _ever_loaded_mark(cache_session2, cls,
+                                                    identity, name)
+                        await cache_session2.commit()
             async with adbv._lock:
                 await cache_session.refresh(cache_object,
                                             attribute_names=[name])
