@@ -143,25 +143,23 @@ class ADBVObject:
                 o = await origin_session.get(cls, identity)
                 await origin_session.refresh(o, attribute_names=[name])
                 r = getattr(o, name)
-                # merge the result(s) into the cache db
+            # merge the result(s) into the cache db
+            if r is not None:
                 async with adbv._lock:
                     async with adbv._cache_sm() as cache_session2:
-                        if r is None:
-                            pass
-                        elif isinstance(r, list):
+                        if isinstance(r, list):
                             for e in r:
                                 await cache_session2.merge(e)
                         else:
                             await cache_session2.merge(r)
                         await cache_session2.commit()
-                if not ever_loaded_exists:
-                    async with adbv._cache_sm() as cache_session2:
-                        await _ever_loaded_mark(cache_session2, cls,
-                                                identity, name)
-                        await cache_session2.commit()
-            async with adbv._lock:
-                await cache_session.refresh(cache_object,
-                                            attribute_names=[name])
+            if not ever_loaded_exists:
+                async with adbv._cache_sm() as cache_session2:
+                    await _ever_loaded_mark(cache_session2, cls,
+                                            identity, name)
+                    await cache_session2.commit()
+            await cache_session.refresh(cache_object,
+                                        attribute_names=[name])
             if r is None:
                 return None
             r = getattr(cache_object, name)
@@ -311,11 +309,14 @@ class ADBV:
         async with self._origin_sm() as origin_session:
             origin_obj = await origin_session.get(underlying_cls, id_)
         async with self._lock:
-            if not ever_loaded_exists:
-                await _ever_loaded_mark(self._cache_session,
+            async with self._cache_sm() as cache_session2:
+                await cache_session2.merge(origin_obj)
+                await cache_session2.commit()
+        if not ever_loaded_exists:
+            async with self._cache_sm() as cache_session2:
+                await _ever_loaded_mark(cache_session2,
                                         underlying_cls, id_, '-')
-            await self._cache_session.merge(origin_obj)
-            await self._cache_session.commit()
+                await cache_session2.commit()
         cache_obj = await self._cache_session.get(underlying_cls, id_)
         return self._wrap(wrapper_class, cache_obj)
 
