@@ -269,6 +269,14 @@ class ADBV:
         cache_db_obj._wrapper = wrapper
         return wrapper
 
+    def _assert_opened(self, wrapper_class):
+        if not self._opened:
+            raise NotLiveError(f'{wrapper_class.__class__.__name__}'
+                               " can't be created from a "
+                               + ('closed' if self._opened is False else
+                                  'unopened') +
+                               f' {self.__class__.__name__}')
+
     async def _load(self, wrapper_class, id_,
                     limit_mode=None, offline_fallback=RaiseIfMissing):
         """
@@ -282,12 +290,7 @@ class ADBV:
                 return await self._load(A, id_)
         ```
         """
-        if not self._opened:
-            raise NotLiveError(f'{wrapper_class.__class__.__name__}'
-                               " can't be created from a "
-                               + ('closed' if self._opened is False else
-                                  'unopened') +
-                               f' {self.__class__.__name__}')
+        self._assert_opened(wrapper_class)
 
         mode = _min_mode(limit_mode, self._mode)
         underlying_cls = wrapper_class.__underlying_class__
@@ -319,5 +322,61 @@ class ADBV:
                 await cache_session2.commit()
         cache_obj = await self._cache_session.get(underlying_cls, id_)
         return self._wrap(wrapper_class, cache_obj)
+
+    async def _load_from_query(self, wrapper_class, tag, identity, statement,
+                               limit_mode=None,
+                               offline_fallback=RaiseIfMissing):
+        """
+        Load and cache objects returned by an sqlalchemy statement.
+
+        Use it, say, from your object wrappers:
+        ```
+        class B:
+            __underlying_class__ = _B
+            async def cs(self, id_: int) -> List[C]:
+                async def custom_loader():
+                    a = await self.a
+                    a_cs = await adbv._load_from_query(
+                        C, 'A.cs', self.id, sqlalchemy.select(_C, _B, _A)
+                                                      .join(_A.bs)
+                                                      .join(_B.cs)
+                                                      .where(_A.id == a.id)
+                    )
+                    return [c for c in a_cs if await c.b == self]
+                return custom_loader()
+        ```
+        """
+        self._assert_opened(wrapper_class)
+        mode = _min_mode(limit_mode, self._mode)
+        underlying_cls = wrapper_class.__underlying_class__
+        ever_loaded_exists = await _ever_loaded_exists(self._cache_session,
+                                                       underlying_cls,
+                                                       identity, tag)
+        if mode != Mode.FRESHEN:
+            if ever_loaded_exists:
+                cached = (await self._cache_session.scalars(statement)).all()
+                return self._wrap_multi(wrapper_class, cached)
+            if mode == Mode.OFFLINE:
+                # never loaded & can't query
+                if offline_fallback == RaiseIfMissing:
+                    raise IsOfflineError('cannot construct '
+                                         f'{wrapper_class.__class__.__name__}'
+                                         f'using {tag} custom query; '
+                                         'offline and it is not cached')
+                return offline_fallback
+        async with self._origin_sm() as origin_session:
+            origin_objs = (await origin_session.scalars(statement)).all()
+        async with self._lock:
+            async with self._cache_sm() as cache_session2:
+                for o in origin_objs:
+                    await cache_session2.merge(o)
+                await cache_session2.commit()
+        if not ever_loaded_exists:
+            async with self._cache_sm() as cache_session2:
+                await _ever_loaded_mark(cache_session2,
+                                        underlying_cls, identity, tag)
+                await cache_session2.commit()
+        cached = (await self._cache_session.scalars(statement)).all()
+        return self._wrap_multi(wrapper_class, cached)
 
     # TODO: switching modes in runtime

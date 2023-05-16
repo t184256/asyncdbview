@@ -53,16 +53,13 @@ async with My_ADBV(None, cache=cache_db_engine,
 ## TODO
 
 1. switch from lists to tuples
-2. fix ever_loaded insertion race condition (rewrite in raw SQL?)
-3. per-query-params locking. add column for queued/completed?
-4. tests that hammer the database in parallel
-5. tests that hammer the database in parallel
+2. per-query-params locking. add column for queued/completed?
+3. tests that hammer the database in parallel
    and ensure no unnecessary queries have happened
-6. tests that share one file-backed cache across processes
-9. profiling and optimizing
-10. OFFLINE_FALLBACK mode (make fallbacks a mode, not a relationship?)
-11. explicit refresh_all action?
-12. move from AVDB inheritance to composition?
-13. add types, enable mypy
-14. consider using __slots__
-15. custom queries
+4. tests that share one file-backed cache across processes
+5. profiling and optimizing
+6. OFFLINE_FALLBACK mode (make fallbacks a mode, not a relationship?)
+7. explicit refresh_all action?
+8. move from AVDB inheritance to composition?
+9. add types, enable mypy
+10. consider using __slots__

@@ -61,6 +61,18 @@ class A(asyncdbview.ADBVObject):
     def bs(self) -> typing.Awaitable[typing.List['B']]:  # noqa: D102
         return self._field_loader(B, 'bs', offline_fallback=[])
 
+    @property
+    def also_bs(self) -> typing.Awaitable[typing.List['B']]:  # noqa: D102
+        async def custom_loader():
+            adbv = self._adbv
+            # all of them are merged, query is remembered to be cached
+            return await adbv._load_from_query(
+                B, 'A.bs', self.id,
+                sqlalchemy.select(_B, _A).join(_A.bs).where(_A.id == self.id),
+                offline_fallback=[],
+            )
+        return custom_loader()
+
 
 class B(asyncdbview.ADBVObject):
     """Wrapper class for B (child) entities exposed by ADBV."""
@@ -129,6 +141,7 @@ async def test_offline_fallback(example_origin):
         a1 = await adbv.A(1)
         b9 = await adbv.B(9)
         assert await a1.bs == []  # fallback
+        assert await a1.also_bs == []  # fallback
         assert await b9.a is None  # fallback
     async with AB_ADBV(origin, cache=cache,
                        mode=asyncdbview.Mode.PREFER_CACHE) as adbv:
@@ -136,13 +149,14 @@ async def test_offline_fallback(example_origin):
         a1 = await adbv.A(1)
         b9 = await adbv.B(9)
         assert len(await a1.bs) == 3
+        assert await a1.bs == await a1.also_bs
         assert (await b9.a).id == 2
     async with AB_ADBV(None, cache=cache,
                        mode=asyncdbview.Mode.OFFLINE) as adbv:
         # loaded
         a1 = await adbv.A(1)
         b9 = await adbv.B(9)
-        assert len(await a1.bs) == 3
+        assert await a1.bs == await a1.also_bs
         assert (await b9.a).id == 2
     await origin.dispose()
     await cache.dispose()

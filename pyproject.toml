@@ -53,10 +53,9 @@ disable = [
     "R0902",
     "E1101",
     "W0201",
-    "D102",
     "C0116",
     "W0612",
     "R0915",
-    "D102",
     "E0401",
+    "consider-using-generator",
 ]

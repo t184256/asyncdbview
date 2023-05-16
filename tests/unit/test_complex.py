@@ -29,11 +29,6 @@ class _A(MappedObjectBase):
     name: sqlalchemy.orm.Mapped[str]
     bs: sqlalchemy.orm.Mapped[typing.List['_B']] = \
         sqlalchemy.orm.relationship()
-    cs: sqlalchemy.orm.Mapped[typing.List['_C']] = sqlalchemy.orm.relationship(
-        '_C', secondary='b',
-        primaryjoin="_B.a_id == _A.id", secondaryjoin="_C.b_id == _B.id",
-        viewonly=True
-    )
 
 
 class _B(MappedObjectBase):
@@ -48,7 +43,7 @@ class _B(MappedObjectBase):
         sqlalchemy.orm.mapped_column(sqlalchemy.ForeignKey('a.id'))
     a: sqlalchemy.orm.Mapped[_A] = \
         sqlalchemy.orm.relationship(back_populates='bs')
-    cs: sqlalchemy.orm.Mapped[typing.List['_C']] =\
+    cs: sqlalchemy.orm.Mapped[typing.List['_C']] = \
         sqlalchemy.orm.relationship()
 
 
@@ -83,10 +78,6 @@ class A(asyncdbview.ADBVObject):
     def bs(self) -> typing.Awaitable[typing.List['B']]:  # noqa: D102
         return self._field_loader(B, 'bs')
 
-    @property
-    def cs(self) -> typing.Awaitable[typing.List['C']]:  # noqa: D102
-        return self._field_loader(C, 'cs')
-
 
 class B(asyncdbview.ADBVObject):
     """Wrapper class for B (child) entities exposed by ADBV."""
@@ -112,11 +103,19 @@ class B(asyncdbview.ADBVObject):
     @property
     def cs(self) -> typing.Awaitable[typing.List['C']]:  # noqa: D102
         # custom loader that loads all Cs of the A at once
+        # alternatively, one could define an A->C relationship and load it
+        # with the regular _field_loader
         async def custom_loader():
-            # TODO: do it with a custom query
+            adbv = self._adbv
             a = await self.a
-            await a.cs  # load all at once
-            return [c for c in await a.cs if await c.b == self]
+            # all of them are merged, query is remembered to be cached
+            cs = await adbv._load_from_query(C, 'A.cs', a.id,
+                                             sqlalchemy.select(_C, _B, _A)
+                                                       .join(_A.bs)
+                                                       .join(_B.cs)
+                                                       .where(_A.id == a.id))
+            # but only the ones related to a specific b are returned
+            return [c for c in cs if await c.b == self]
         return custom_loader()
 
 
@@ -189,7 +188,7 @@ async def test_smoke(example_origin):
         b0 = (await a1.bs)[0]
         assert (await b0.cs)[0].name == 'b0.c0'
         assert (await b0.cs)[1].name == 'b0.c1'
-        assert len(await a1.cs) == 3 * 2
+        assert sum([len(await b.cs) for b in await a1.bs]) == 3 * 2
         await b0.a
         assert await b0.a is a1
     await origin.dispose()
@@ -263,13 +262,11 @@ async def test_modes_a(example_origin):
         a1 = await adbv.A(1)
         with pytest.raises(asyncdbview.IsOfflineError):
             await a1.bs
-        with pytest.raises(asyncdbview.IsOfflineError):
-            await a1.cs
     async with AB_ADBV(origin, cache=cache,
                        mode=asyncdbview.Mode.PREFER_CACHE) as adbv:
         a1 = await adbv.A(1)
         assert len(await a1.bs) == 4
-        assert len(await a1.cs) == 6
+        assert sum([len(await b.cs) for b in await a1.bs]) == 6
 
     async with sqlalchemy.ext.asyncio.async_sessionmaker(origin)() as session:
         session.add(_C(id=100, b_id=1, name='test'))
@@ -279,27 +276,27 @@ async def test_modes_a(example_origin):
                        mode=asyncdbview.Mode.OFFLINE) as adbv:
         a1 = await adbv.A(1)
         assert len(await a1.bs) == 4
-        assert len(await a1.cs) == 6
+        assert sum([len(await b.cs) for b in await a1.bs]) == 6
     async with AB_ADBV(origin, cache=cache,
                        mode=asyncdbview.Mode.PREFER_CACHE) as adbv:
         a1 = await adbv.A(1)
         assert len(await a1.bs) == 4
-        assert len(await a1.cs) == 6
+        assert sum([len(await b.cs) for b in await a1.bs]) == 6
     async with AB_ADBV(origin, cache=cache,
                        mode=asyncdbview.Mode.FRESHEN) as adbv:
         a1 = await adbv.A(1)
         assert len(await a1.bs) == 4
-        assert len(await a1.cs) == 7
+        assert sum([len(await b.cs) for b in await a1.bs]) == 7
     async with AB_ADBV(origin, cache=cache,
                        mode=asyncdbview.Mode.PREFER_CACHE) as adbv:
         a1 = await adbv.A(1)
         assert len(await a1.bs) == 4
-        assert len(await a1.cs) == 7
+        assert sum([len(await b.cs) for b in await a1.bs]) == 7
     async with AB_ADBV(None, cache=cache,
                        mode=asyncdbview.Mode.OFFLINE) as adbv:
         a1 = await adbv.A(1)
         assert len(await a1.bs) == 4
-        assert len(await a1.cs) == 7
+        assert sum([len(await b.cs) for b in await a1.bs]) == 7
     await origin.dispose()
     await cache.dispose()
 
