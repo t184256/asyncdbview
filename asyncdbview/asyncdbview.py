@@ -354,8 +354,7 @@ class ADBV:
                                                        identity, tag)
         if mode != Mode.FRESHEN:
             if ever_loaded_exists:
-                cached = (await self._cache_session.scalars(statement)).all()
-                return self._wrap_multi(wrapper_class, cached)
+                return await self.__query_cache(wrapper_class, statement)
             if mode == Mode.OFFLINE:
                 # never loaded & can't query
                 if offline_fallback == RaiseIfMissing:
@@ -376,6 +375,9 @@ class ADBV:
                 await _ever_loaded_mark(cache_session2,
                                         underlying_cls, identity, tag)
                 await cache_session2.commit()
+        return await self.__query_cache(wrapper_class, statement)
+
+    async def __query_cache(self, wrapper_class, statement):
         cached = (await self._cache_session.scalars(statement)).all()
         return self._wrap_multi(wrapper_class, cached)
 
