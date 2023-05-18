@@ -145,14 +145,7 @@ class ADBVObject:
                 r = getattr(o, name)
             # merge the result(s) into the cache db
             if r is not None:
-                async with adbv._lock:
-                    async with adbv._cache_sm() as cache_session2:
-                        if isinstance(r, list):
-                            for e in r:
-                                await cache_session2.merge(e)
-                        else:
-                            await cache_session2.merge(r)
-                        await cache_session2.commit()
+                await adbv._merge(r)
             if not ever_loaded_exists:
                 async with adbv._cache_sm() as cache_session2:
                     await _ever_loaded_mark(cache_session2, cls,
@@ -311,10 +304,7 @@ class ADBV:
                 return offline_fallback
         async with self._origin_sm() as origin_session:
             origin_obj = await origin_session.get(underlying_cls, id_)
-        async with self._lock:
-            async with self._cache_sm() as cache_session2:
-                await cache_session2.merge(origin_obj)
-                await cache_session2.commit()
+        await self._merge_single(origin_obj)
         if not ever_loaded_exists:
             async with self._cache_sm() as cache_session2:
                 await _ever_loaded_mark(cache_session2,
@@ -365,11 +355,7 @@ class ADBV:
                 return offline_fallback
         async with self._origin_sm() as origin_session:
             origin_objs = (await origin_session.scalars(statement)).all()
-        async with self._lock:
-            async with self._cache_sm() as cache_session2:
-                for o in origin_objs:
-                    await cache_session2.merge(o)
-                await cache_session2.commit()
+        await self._merge_multi(origin_objs)
         if not ever_loaded_exists:
             async with self._cache_sm() as cache_session2:
                 await _ever_loaded_mark(cache_session2,
@@ -380,5 +366,24 @@ class ADBV:
     async def __query_cache(self, wrapper_class, statement):
         cached = (await self._cache_session.scalars(statement)).all()
         return self._wrap_multi(wrapper_class, cached)
+
+    async def _merge(self, dbresult):
+        if isinstance(dbresult, list):
+            await self._merge_multi(dbresult)
+        else:
+            await self._merge_single(dbresult)
+
+    async def _merge_single(self, dbobject):
+        async with self._lock:
+            async with self._cache_sm() as cache_session_wr:
+                await cache_session_wr.merge(dbobject)
+                await cache_session_wr.commit()
+
+    async def _merge_multi(self, dbobjects):
+        async with self._lock:
+            async with self._cache_sm() as cache_session_wr:
+                for o in dbobjects:
+                    await cache_session_wr.merge(o)
+                await cache_session_wr.commit()
 
     # TODO: switching modes in runtime
