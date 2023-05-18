@@ -56,9 +56,12 @@ async def _ever_loaded_exists(cache_session, cls, identity, attrname):
             field = :field
         LIMIT 1
     """)
+    i = str(identity[0]
+            if isinstance(identity, tuple) and len(identity) == 1 else
+            identity)
     values = {
         'cls': cls.__name__,
-        'identity': str(identity),
+        'identity': str(i),
         'field': attrname,
     }
     ex = cache_session.execute(stmt, params=values)
@@ -72,9 +75,12 @@ async def _ever_loaded_mark(cache_session, cls, identity, attrname):
         VALUES(:cls,:identity,:field)
         ON CONFLICT DO NOTHING
     """)
+    i = str(identity[0]
+            if isinstance(identity, tuple) and len(identity) == 1 else
+            identity)
     values = {
         'cls': cls.__name__,
-        'identity': str(identity),
+        'identity': str(i),
         'field': attrname,
     }
     await cache_session.execute(stmt, params=values)
